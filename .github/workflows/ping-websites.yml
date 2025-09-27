@@ -33,10 +33,16 @@ jobs:
         
         # 设置默认值
         TIMEOUT=${TIMEOUT:-30}
-        USER_AGENT=${USER_AGENT:-"Mozilla/5.0 (compatible; GitHub-Action-Bot)"}
+        USER_AGENT=${USER_AGENT:-"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
+        
+        echo "🔍 调试信息:"
+        echo "   WEBSITES 变量长度: ${#WEBSITES}"
+        echo "   超时设置: ${TIMEOUT}秒"
+        echo "   User-Agent: ${USER_AGENT}"
+        echo "   网站数量: $(echo "$WEBSITES" | tr ',' '\n' | wc -l)"
+        echo ""
         
         echo "🚀 开始访问网站..."
-        echo "⏱️  超时设置: ${TIMEOUT}秒"
         
         # 计数器
         success_count=0
@@ -51,28 +57,46 @@ jobs:
           if [ -n "$website" ]; then
             total_count=$((total_count + 1))
             echo "📡 正在访问网站 #${total_count}..."
+            echo "   🔗 URL长度: ${#website} 字符"
             
-            # 使用 curl 请求网站，隐藏具体 URL
-            if curl -s -o /dev/null -w "%{http_code}" \
+            # 使用 curl 请求网站，添加详细调试
+            if curl -v -s -o /dev/null -w "%{http_code}|%{time_total}|%{size_download}" \
                    --max-time "$TIMEOUT" \
                    --user-agent "$USER_AGENT" \
                    --location \
-                   --fail-with-body \
-                   "$website" > /tmp/http_code 2>/dev/null; then
+                   --insecure \
+                   --compressed \
+                   --header "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" \
+                   --header "Accept-Language: en-US,en;q=0.5" \
+                   --header "Accept-Encoding: gzip, deflate" \
+                   --header "DNT: 1" \
+                   --header "Connection: keep-alive" \
+                   --header "Upgrade-Insecure-Requests: 1" \
+                   "$website" > /tmp/curl_output_${total_count} 2> /tmp/curl_error_${total_count}; then
               
-              http_code=$(cat /tmp/http_code)
+              # 解析输出
+              output=$(cat /tmp/curl_output_${total_count})
+              IFS='|' read -r http_code time_total size_download <<< "$output"
+              
               if [ "$http_code" -ge 200 ] && [ "$http_code" -lt 400 ]; then
-                echo "✅ 网站 #${total_count} 访问成功 (HTTP: $http_code)"
+                echo "   ✅ 访问成功! HTTP: $http_code, 耗时: ${time_total}s, 大小: ${size_download}B"
                 success_count=$((success_count + 1))
               else
-                echo "⚠️  网站 #${total_count} 返回异常状态码: $http_code"
+                echo "   ⚠️  异常状态码: $http_code, 耗时: ${time_total}s"
+                echo "   📄 错误详情:"
+                head -5 /tmp/curl_error_${total_count} | sed 's/^/      /'
               fi
             else
-              echo "❌ 网站 #${total_count} 访问失败"
+              echo "   ❌ 访问失败!"
+              echo "   📄 错误详情:"
+              head -5 /tmp/curl_error_${total_count} | sed 's/^/      /'
+              echo "   🔍 连接信息:"
+              grep -E "(Could not resolve|Connection refused|timeout|SSL|certificate)" /tmp/curl_error_${total_count} | head -3 | sed 's/^/      /'
             fi
             
+            echo ""
             # 请求间隔，避免过于频繁
-            sleep 2
+            sleep 3
           fi
         done
         
