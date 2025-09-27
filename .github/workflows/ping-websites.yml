@@ -59,19 +59,26 @@ jobs:
             echo "📡 正在访问网站 #${total_count}..."
             echo "   🔗 URL长度: ${#website} 字符"
             
-            # 使用 curl 请求网站，添加详细调试
+            # 使用 curl 请求网站，模拟真实浏览器行为
             if curl -v -s -o /dev/null -w "%{http_code}|%{time_total}|%{size_download}" \
                    --max-time "$TIMEOUT" \
                    --user-agent "$USER_AGENT" \
                    --location \
                    --insecure \
                    --compressed \
-                   --header "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" \
-                   --header "Accept-Language: en-US,en;q=0.5" \
-                   --header "Accept-Encoding: gzip, deflate" \
-                   --header "DNT: 1" \
-                   --header "Connection: keep-alive" \
+                   --header "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8" \
+                   --header "Accept-Language: zh-CN,zh;q=0.9,en;q=0.8" \
+                   --header "Accept-Encoding: gzip, deflate, br" \
+                   --header "Cache-Control: max-age=0" \
+                   --header "Sec-Fetch-Dest: document" \
+                   --header "Sec-Fetch-Mode: navigate" \
+                   --header "Sec-Fetch-Site: none" \
+                   --header "Sec-Fetch-User: ?1" \
                    --header "Upgrade-Insecure-Requests: 1" \
+                   --header "Pragma: no-cache" \
+                   --cookie-jar /tmp/cookies_${total_count} \
+                   --cookie /tmp/cookies_${total_count} \
+                   --referer "https://www.google.com/" \
                    "$website" > /tmp/curl_output_${total_count} 2> /tmp/curl_error_${total_count}; then
               
               # 解析输出
@@ -116,4 +123,4 @@ jobs:
     - name: 完成
       run: |
         echo "🎉 任务执行完成！"
-        echo "下次执行时间: $(date -d '+1 hour')"
+
