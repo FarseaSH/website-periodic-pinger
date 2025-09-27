@@ -1,0 +1,95 @@
+name: 定期访问网站
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch: # 允许手动触发
+
+jobs:
+  ping-websites:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    
+    - name: 设置环境
+      run: |
+        echo "开始执行网站访问任务..."
+        echo "当前时间: $(date)"
+    
+    - name: 执行网站请求
+      env:
+        # 从 GitHub Secrets 获取网站列表
+        WEBSITES: ${{ secrets.WEBSITES }}
+        USER_AGENT: ${{ secrets.USER_AGENT }}
+        TIMEOUT: ${{ secrets.TIMEOUT }}
+      run: |
+        # 检查是否设置了必要的 secrets
+        if [ -z "$WEBSITES" ]; then
+          echo "❌ 错误: 请在仓库设置中配置 WEBSITES secret"
+          exit 1
+        fi
+        
+        # 设置默认值
+        TIMEOUT=${TIMEOUT:-30}
+        USER_AGENT=${USER_AGENT:-"Mozilla/5.0 (compatible; GitHub-Action-Bot)"}
+        
+        echo "🚀 开始访问网站..."
+        echo "⏱️  超时设置: ${TIMEOUT}秒"
+        
+        # 计数器
+        success_count=0
+        total_count=0
+        
+        # 将网站列表分割并逐个访问
+        IFS=',' read -ra WEBSITE_ARRAY <<< "$WEBSITES"
+        for website in "${WEBSITE_ARRAY[@]}"; do
+          # 去除空格
+          website=$(echo "$website" | xargs)
+          
+          if [ -n "$website" ]; then
+            total_count=$((total_count + 1))
+            echo "📡 正在访问网站 #${total_count}..."
+            
+            # 使用 curl 请求网站，隐藏具体 URL
+            if curl -s -o /dev/null -w "%{http_code}" \
+                   --max-time "$TIMEOUT" \
+                   --user-agent "$USER_AGENT" \
+                   --location \
+                   --fail-with-body \
+                   "$website" > /tmp/http_code 2>/dev/null; then
+              
+              http_code=$(cat /tmp/http_code)
+              if [ "$http_code" -ge 200 ] && [ "$http_code" -lt 400 ]; then
+                echo "✅ 网站 #${total_count} 访问成功 (HTTP: $http_code)"
+                success_count=$((success_count + 1))
+              else
+                echo "⚠️  网站 #${total_count} 返回异常状态码: $http_code"
+              fi
+            else
+              echo "❌ 网站 #${total_count} 访问失败"
+            fi
+            
+            # 请求间隔，避免过于频繁
+            sleep 2
+          fi
+        done
+        
+        echo ""
+        echo "📊 执行结果统计:"
+        echo "   总计: $total_count 个网站"
+        echo "   成功: $success_count 个"
+        echo "   失败: $((total_count - success_count)) 个"
+        echo "   成功率: $(( success_count * 100 / total_count ))%"
+        
+        # 如果所有网站都失败了，标记为失败
+        if [ $success_count -eq 0 ] && [ $total_count -gt 0 ]; then
+          echo "💥 所有网站访问都失败了！"
+          exit 1
+        fi
+    
+    - name: 完成
+      run: |
+        echo "🎉 任务执行完成！"
+        echo "下次执行时间: $(date -d '+1 hour')"
